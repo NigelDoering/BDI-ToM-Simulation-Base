@@ -1,5 +1,14 @@
+# BDI Theory of Mind — Python dependencies
+# Install via: uv pip install -r requirements.txt
+
+# --- Simulation & data ---
 numpy>=1.24
 matplotlib>=3.7
 Pillow>=10.0
 PyYAML>=6.0
 tqdm>=4.65
+
+# --- Deep learning ---
+torch>=2.2
+# wandb for experiment tracking (project: simulation-tom)
+wandb>=0.17
