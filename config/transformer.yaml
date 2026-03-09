@@ -1,0 +1,71 @@
+# =============================================================================
+# BDI Transformer — Entangled Baseline Configuration
+# =============================================================================
+# This config defines the *entangled* transformer baseline: a single shared
+# latent representation feeds all three prediction heads (goal, belief, desire).
+# It is evaluated against the BDI-factorised model as the paper's primary
+# comparison.  Both models share the same data pipeline and training script.
+
+# --- Model architecture ------------------------------------------------------
+model:
+  name: bdi_transformer          # used for checkpoint filenames and WandB runs
+
+  d_model: 128                   # transformer hidden dimension
+  n_heads: 4                     # attention heads (d_model must be divisible)
+  n_layers: 4                    # transformer encoder depth
+  d_ff: 512                      # feedforward sublayer width (4 × d_model)
+  dropout: 0.1
+
+  # Max trajectory length.  Grid diagonal ≈ 70 cells; 100 is a safe upper bound.
+  max_seq_len: 100
+
+# --- Dataset -----------------------------------------------------------------
+data:
+  # Path to the dataset run to train on (relative to project root).
+  # Override with --datasets_dir to use a different run.
+  datasets_dir: "datasets/run_1"
+
+  # Prefix fractions sampled uniformly per episode during training.
+  min_prefix_frac: 0.20
+  max_prefix_frac: 0.80
+
+  # Six evenly-spaced prefix fractions for the evaluation accuracy curve.
+  # These match the WandB panel groupings logged during training.
+  eval_prefix_fracs: [0.10, 0.20, 0.30, 0.50, 0.70, 0.90]
+
+# --- Training ----------------------------------------------------------------
+training:
+  n_epochs: 50
+  batch_size: 64
+  num_workers: 0                 # set >0 if DataLoader multiprocessing is stable
+
+  # AdamW optimiser
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  grad_clip: 1.0                 # max gradient norm (0 = disabled)
+
+  # Cosine annealing with linear warmup
+  warmup_epochs: 5
+
+  # Multi-head loss weights (λ_goal, λ_belief, λ_desire)
+  # All equal by default; tune if one head dominates gradient signal.
+  loss_weights:
+    goal: 1.0
+    belief: 1.0
+    desire: 1.0
+
+  # How often to evaluate the prefix-fraction accuracy curve on train set.
+  # Val curve is evaluated every epoch.  Train curve is expensive (10k × 6).
+  eval_train_every: 5
+
+  # Checkpointing
+  checkpoint_dir: "checkpoints/transformer"
+  save_every: 10                 # save periodic checkpoint every N epochs
+  save_best: true                # also save best-val-loss checkpoint
+
+# --- Weights & Biases --------------------------------------------------------
+wandb:
+  project: "simulation-tom"
+  entity:  "nigeldoering-uc-san-diego"
+  log_gradients: false           # set true to log gradient histograms
+  watch_model: false             # set true to log parameter histograms
