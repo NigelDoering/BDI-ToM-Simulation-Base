@@ -36,7 +36,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from .dataloader import BDIDataset, collate_fn
-from .losses import BDILoss, belief_accuracy, desire_accuracy, goal_accuracy
+from .losses import BDILoss, belief_metrics, desire_accuracy, goal_accuracy
 
 
 class Trainer:
@@ -152,6 +152,7 @@ class Trainer:
         loss_totals = {"total": 0.0, "goal": 0.0, "belief": 0.0, "desire": 0.0}
         all_goal_logits, all_belief_logits, all_desire_logits = [], [], []
         all_goals, all_beliefs, all_desires = [], [], []
+        all_world_states, all_is_veridical = [], []
         n_batches = 0
 
         for batch in loader:
@@ -172,19 +173,25 @@ class Trainer:
             all_goals.append(batch["goal"].cpu())
             all_beliefs.append(batch["belief"].cpu())
             all_desires.append(batch["desires"].cpu())
+            all_world_states.append(batch["world_state"].cpu())
+            all_is_veridical.append(batch["is_veridical"].cpu())
             n_batches += 1
 
-        goal_logits  = torch.cat(all_goal_logits)
+        goal_logits   = torch.cat(all_goal_logits)
         belief_logits = torch.cat(all_belief_logits)
         desire_logits = torch.cat(all_desire_logits)
-        goals   = torch.cat(all_goals)
-        beliefs = torch.cat(all_beliefs)
-        desires = torch.cat(all_desires)
+        goals         = torch.cat(all_goals)
+        beliefs       = torch.cat(all_beliefs)
+        desires       = torch.cat(all_desires)
+        world_states  = torch.cat(all_world_states)
+        is_veridical  = torch.cat(all_is_veridical)
 
         metrics = {k: v / n_batches for k, v in loss_totals.items()}
-        metrics["goal_acc"]    = goal_accuracy(goal_logits, goals)
-        metrics["belief_acc"]  = belief_accuracy(belief_logits, beliefs)
-        metrics["desire_acc"]  = desire_accuracy(desire_logits, desires)
+        metrics["goal_acc"]  = goal_accuracy(goal_logits, goals)
+        metrics["desire_acc"] = desire_accuracy(desire_logits, desires)
+        # Richer belief metrics — replaces the misleading single bit_acc number
+        bm = belief_metrics(belief_logits, beliefs, world_states, is_veridical)
+        metrics.update({f"belief_{k}": v for k, v in bm.items()})
         return metrics
 
     def evaluate_prefix_curve(
@@ -224,9 +231,15 @@ class Trainer:
         log_dict = {}
         for pf, metrics in curve.items():
             pf_tag = f"pf{int(pf * 100):02d}"
-            log_dict[f"{split}/goal_acc/{pf_tag}"]    = metrics["goal_acc"]
-            log_dict[f"{split}/belief_acc/{pf_tag}"]  = metrics["belief_acc"]
-            log_dict[f"{split}/desire_acc/{pf_tag}"]  = metrics["desire_acc"]
+            # Goal and desire top-1 accuracy
+            log_dict[f"{split}/goal_acc/{pf_tag}"]           = metrics["goal_acc"]
+            log_dict[f"{split}/desire_acc/{pf_tag}"]          = metrics["desire_acc"]
+            # Belief: report false-episode accuracy (primary), plus Hamming distances
+            log_dict[f"{split}/belief_acc_false/{pf_tag}"]   = metrics["belief_bit_acc_false"]
+            log_dict[f"{split}/belief_acc_verid/{pf_tag}"]   = metrics["belief_bit_acc_veridical"]
+            log_dict[f"{split}/belief_hamming/{pf_tag}"]     = metrics["belief_hamming_pred"]
+            # Log the no-model baseline once per split so it's visible on the same panel
+            log_dict[f"{split}/belief_ws_baseline/{pf_tag}"] = metrics["belief_ws_baseline_acc"]
         self._log(log_dict, epoch)
 
     # ------------------------------------------------------------------
@@ -301,9 +314,11 @@ class Trainer:
                 f"  Epoch {epoch:3d}/{self.n_epochs} | "
                 f"train_loss={train_losses['total']:.4f} | "
                 f"val_loss={val_total:.4f} | "
-                f"goal_acc={mid_metrics['goal_acc']:.3f} | "
-                f"belief_acc={mid_metrics['belief_acc']:.3f} | "
-                f"desire_acc={mid_metrics['desire_acc']:.3f} | "
+                f"goal={mid_metrics['goal_acc']:.3f} | "
+                f"belief(false)={mid_metrics['belief_bit_acc_false']:.3f} "
+                f"[ws={mid_metrics['belief_ws_baseline_acc']:.3f}] "
+                f"H={mid_metrics['belief_hamming_pred']:.1f} | "
+                f"desire={mid_metrics['desire_acc']:.3f} | "
                 f"{elapsed:.1f}s"
             )
 
@@ -316,9 +331,11 @@ class Trainer:
             mid_pf = sorted(self.eval_datasets[split].keys())[len(self.eval_datasets[split]) // 2]
             m = curve[mid_pf]
             print(
-                f"  {split}: goal_acc={m['goal_acc']:.3f} | "
-                f"belief_acc={m['belief_acc']:.3f} | "
-                f"desire_acc={m['desire_acc']:.3f}"
+                f"  {split}: goal={m['goal_acc']:.3f} | "
+                f"belief(false)={m['belief_bit_acc_false']:.3f} "
+                f"[ws_baseline={m['belief_ws_baseline_acc']:.3f}] "
+                f"H={m['belief_hamming_pred']:.1f} | "
+                f"desire={m['desire_acc']:.3f}"
             )
 
         self._save("final")

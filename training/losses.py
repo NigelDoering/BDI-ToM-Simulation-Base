@@ -127,16 +127,72 @@ def goal_accuracy(goal_logits: torch.Tensor, goal_targets: torch.Tensor) -> floa
 
 
 @torch.no_grad()
-def belief_accuracy(belief_logits: torch.Tensor, belief_targets: torch.Tensor) -> float:
+def belief_metrics(
+    belief_logits: torch.Tensor,
+    belief_targets: torch.Tensor,
+    world_states: torch.Tensor,
+    is_veridical: torch.Tensor,
+) -> dict:
     """
-    Per-POI accuracy: fraction of individual POI bits correctly predicted
-    after thresholding sigmoid output at 0.5.
+    Comprehensive belief evaluation metrics.
 
-    With N=100 POIs and ρ=0.3, the world-state baseline is ~70%.
-    A useful model should substantially exceed this.
+    The naïve per-POI accuracy has a misleading floor of ~50% because
+    beliefs are balanced (P(belief=1) ≈ 0.5 for ρ=0.3, P(W=1) ≈ 0.5).
+    An untrained model with near-zero logits achieves ~50% by chance.
+
+    Meaningful baselines:
+      - Random predictor       : ~50%  (uninformative floor)
+      - Predict world state W  : ~85%  (50% veridical → 100%, 50% false → ~70%)
+      - Oracle                 : 100%
+
+    The paper's key diagnostic is Hamming distance: how many bits does the
+    predicted belief differ from the true belief?  Baseline = ρ·N ≈ 30.
+
+    Returns
+    -------
+    dict with keys:
+      bit_acc_all      : raw per-POI accuracy (misleading on its own)
+      bit_acc_veridical: per-POI accuracy on veridical episodes only
+      bit_acc_false    : per-POI accuracy on false-belief episodes only (the key metric)
+      ws_baseline_acc  : accuracy of always predicting world state (no-model baseline)
+      hamming_pred     : mean Hamming distance between prediction and true belief (↓ better)
+      hamming_baseline : mean Hamming dist. of always predicting W (model must beat this)
     """
-    preds = (belief_logits.sigmoid() > 0.5).float()
-    return (preds == belief_targets).float().mean().item()
+    B, N = belief_targets.shape
+    preds_binary = (belief_logits.sigmoid() > 0.5).float()
+
+    # Raw per-POI accuracy (all episodes)
+    correct = (preds_binary == belief_targets)
+    bit_acc_all = correct.float().mean().item()
+
+    # Stratify by veridical / false
+    if is_veridical.any():
+        bit_acc_veridical = correct[is_veridical].float().mean().item()
+    else:
+        bit_acc_veridical = float("nan")
+
+    false_mask = ~is_veridical
+    if false_mask.any():
+        bit_acc_false = correct[false_mask].float().mean().item()
+    else:
+        bit_acc_false = float("nan")
+
+    # World-state baseline: what accuracy does "always predict W" achieve?
+    ws_correct = (world_states == belief_targets)
+    ws_baseline_acc = ws_correct.float().mean().item()
+
+    # Hamming distance: number of bits wrong per episode (↓ is better)
+    hamming_pred     = (preds_binary != belief_targets).float().sum(dim=-1).mean().item()
+    hamming_baseline = (world_states  != belief_targets).float().sum(dim=-1).mean().item()
+
+    return {
+        "bit_acc_all":       bit_acc_all,
+        "bit_acc_veridical": bit_acc_veridical,
+        "bit_acc_false":     bit_acc_false,
+        "ws_baseline_acc":   ws_baseline_acc,
+        "hamming_pred":      hamming_pred,
+        "hamming_baseline":  hamming_baseline,
+    }
 
 
 @torch.no_grad()
