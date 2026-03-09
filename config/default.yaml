@@ -1,0 +1,68 @@
+# =============================================================================
+# BDI Theory of Mind Simulation — Default Configuration
+# =============================================================================
+# All parameters are documented with their rationale for reproducibility.
+# Override any value via CLI or by creating a new YAML that imports this one.
+
+# --- Reproducibility ---------------------------------------------------------
+seed: 42
+
+# --- Environment -------------------------------------------------------------
+environment:
+  grid_size: [50, 50]         # (rows, cols) of the 2D grid
+  n_pois: 100                 # Number of points of interest (POIs)
+
+  # World states W(1)...W(K): K distinct binary POI availability configs.
+  # Rationale for K=200: large enough to prevent the model from memorising
+  # K configurations instead of learning a general belief representation;
+  # small enough that ~50 train episodes per world state give stable statistics.
+  # Each world state is sampled uniformly from {0,1}^N with the constraint that
+  # at least min_open_pois POIs are open (avoids degenerate no-goal episodes).
+  n_world_states: 200         # K
+  min_open_pois: 10           # minimum open POIs per world state
+
+  # Minimum BFS distance (steps) between an agent's start position and goal.
+  # Rationale: on an open grid, very short trajectories are nearly direction-
+  # unambiguous — the model can shortcut to "project heading → nearest POI"
+  # without modeling beliefs or desires.  Enforcing ≥15 steps ensures that
+  # at any 20% prefix (3 steps), multiple POIs lie within the trajectory cone
+  # and mental-state reasoning is genuinely required for disambiguation.
+  # 15 steps ≈ 30% of the grid's diagonal (~70 cells) — non-trivial but common.
+  min_start_goal_steps: 15
+
+# --- Agents ------------------------------------------------------------------
+agents:
+  n_familiar: 100             # agents seen during training
+  n_novel: 40                 # agents withheld for test conditions 3 & 4
+  dirichlet_alpha: 1.0        # Dirichlet concentration for desire sampling
+                              # alpha=1 → uniform prior; lower → sparser prefs
+
+# --- Belief sampling ---------------------------------------------------------
+beliefs:
+  false_belief_rho: 0.30      # ρ: per-POI flip probability for false beliefs
+                              # E[dH(Ba,W)] = ρ·N = 30 disagreements on average
+  # Training mix: fraction of episodes in train/val that use false beliefs.
+  # 50/50 ensures the model sees equal numbers of veridical and false examples.
+  false_belief_fraction: 0.50
+
+# --- Dataset -----------------------------------------------------------------
+dataset:
+  n_train: 10000              # training episodes (conditions 1+2, familiar agents)
+  n_val: 2000                 # validation episodes (same distribution as train)
+  n_test_per_condition: 1000  # test episodes per condition (C1–C4)
+  output_dir: "datasets"      # relative to project root
+
+  # Partial trajectory prefix lengths for the inference task.
+  # Each full trajectory is also saved; prefix length is sampled uniformly
+  # from [min_prefix_frac, max_prefix_frac] of trajectory length at load time.
+  # These bounds are stored here so training code reads consistent splits.
+  min_prefix_frac: 0.20
+  max_prefix_frac: 0.80
+
+# --- Visualization -----------------------------------------------------------
+visualization:
+  fps: 4                      # GIF frames per second
+  dpi: 80                     # figure DPI (controls output resolution)
+  output_dir: "outputs"       # relative to project root
+  show_beliefs: true          # overlay agent's belief state on POI markers
+  show_desires: true          # scale POI marker size by agent's desire weight

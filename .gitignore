@@ -1,0 +1,48 @@
+# =============================================================================
+# BDI Theory of Mind — .gitignore
+# =============================================================================
+# Generated datasets and outputs are NOT tracked in git.
+# They are reproducible from the locked seed in config/default.yaml:
+#   python scripts/generate_dataset.py --output_dir datasets/run_N
+# Large binary / generated files should live outside the repo or in a
+# dedicated data store (e.g. S3, Hugging Face datasets, university cluster).
+
+# --- Generated data ----------------------------------------------------------
+datasets/
+
+# --- Generated visualisations ------------------------------------------------
+outputs/
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+.venv/
+venv/
+env/
+
+# --- Jupyter -----------------------------------------------------------------
+.ipynb_checkpoints/
+*.ipynb
+
+# --- macOS -------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- Editor / IDE ------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Logs / temporary --------------------------------------------------------
+*.log
+*.tmp
